@@ -46,7 +46,7 @@
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                        <input type="email" x-model="email" @keydown.enter="requestOtp('AUTO')" placeholder="name@bkivv.org" 
+                        <input type="email" x-model="email" @keydown.enter="requestOtp('AUTO')" placeholder="name@bkivv.org" autocomplete="off"
                                class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
                     </div>
                     <button @click="requestOtp('AUTO')" :disabled="loading"
@@ -76,7 +76,8 @@
                                @input="handleOtpInput($event, index)"
                                @keydown.backspace="handleOtpBackspace($event, index)"
                                @keydown.enter="verifyOtp()"
-                               class="w-12 h-14 text-center text-2xl font-bold rounded-xl border border-gray-200 otp-input outline-none transition-all">
+                               class="w-12 h-14 text-center text-2xl font-bold rounded-xl border border-gray-200 otp-input outline-none transition-all"
+                               inputmode="numeric" pattern="[0-9]*">
                     </template>
                 </div>
                 <button @click="verifyOtp()" :disabled="loading || otpArray.join('').length < 6"
@@ -118,12 +119,13 @@
             <div class="bg-white p-6 rounded-2xl shadow-sm border space-y-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Your Full Name <span class="text-red-500">*</span></label>
-                    <input type="text" x-model="profile.name" @keydown.enter="saveProfile()" placeholder="As per records" 
+                    <input type="text" x-model="profile.name" @keydown.enter="saveProfile()" placeholder="As per records" autocomplete="off"
                            class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Primary Mobile Number <span class="text-red-500">*</span></label>
-                    <input type="tel" x-model="profile.primaryMobile" @keydown.enter="saveProfile()" placeholder="10 digit mobile" maxlength="10"
+                    <input type="tel" x-model="profile.primaryMobile" @keydown.enter="saveProfile()" placeholder="10 digit mobile" maxlength="10" autocomplete="off"
+                           @input="profile.primaryMobile = $event.target.value.replace(/\D/g, '')"
                            class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
                 </div>
                 <div>
@@ -136,7 +138,7 @@
                                    @blur="setTimeout(() => { open = false; lookupUid(profile.uid) }, 200)"
                                    @keydown.enter="saveProfile()"
                                    @click.away="open = false"
-                                   placeholder="Search or Enter UID" 
+                                   placeholder="Search or Enter UID" autocomplete="off"
                                    class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none pr-10">
                             <div class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                                 <i data-lucide="chevron-down" class="w-5 h-5"></i>
@@ -146,8 +148,12 @@
                             <div x-show="uidLoading" class="px-4 py-3 flex justify-center">
                                 <div class="animate-spin border-2 border-blue-600 border-t-transparent rounded-full w-5 h-5"></div>
                             </div>
+                            <div x-show="!uidLoading && uids.length === 0" class="px-4 py-3 text-center">
+                                <p class="text-xs text-red-500 mb-2">Failed to load UIDs</p>
+                                <button @click.stop="fetchUids()" class="text-xs font-bold text-blue-600 hover:underline">Retry Loading</button>
+                            </div>
                             <template x-for="u in (uids || []).filter(i => String(i.uid || '').toLowerCase().includes(String(search || '').toLowerCase()) || String(i.unitName || '').toLowerCase().includes(String(search || '').toLowerCase()))">
-                                <div @mousedown="profile.uid = u.uid; lookupUid(u.uid); open = false; search = u.uid" 
+                                <div @click="profile.uid = u.uid; lookupUid(u.uid); open = false; search = u.uid" 
                                      class="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-0">
                                     <div class="font-bold text-sm" x-text="u.uid"></div>
                                     <div class="text-xs text-gray-500" x-text="u.unitName"></div>
@@ -161,7 +167,12 @@
                     </div>
                 </div>
 
-                <template x-if="uidDetails">
+                <div x-show="uidLoading" class="bg-blue-50/50 p-6 rounded-xl border border-dashed border-blue-200 flex flex-col items-center justify-center gap-3">
+                    <div class="animate-spin border-2 border-blue-600 border-t-transparent rounded-full w-6 h-6"></div>
+                    <p class="text-xs text-blue-600 font-bold uppercase tracking-widest">Fetching Unit Details...</p>
+                </div>
+
+                <template x-if="uidDetails && !uidLoading">
                     <div class="bg-blue-50 p-4 rounded-xl space-y-3 border border-blue-100">
                         <div class="flex justify-between text-xs text-blue-600 font-bold uppercase tracking-wider">
                             <span>Zone: <span class="text-blue-900" x-text="uidDetails.zone"></span></span>
@@ -336,7 +347,8 @@
                         <!-- Mobile No -->
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Existing Mobile Number <span class="text-red-500">*</span></label>
-                            <input type="tel" x-model="currentRequest.existingMobile" maxlength="10" placeholder="10 digit number"
+                            <input type="tel" x-model="currentRequest.existingMobile" maxlength="10" placeholder="10 digit number" autocomplete="off"
+                                   @input="currentRequest.existingMobile = $event.target.value.replace(/\D/g, '')"
                                    @keydown.enter="saveRequest()"
                                    class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
                         </div>
@@ -366,13 +378,13 @@
                         <!-- Aadhaar -->
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Aadhaar Number <span class="text-red-500">*</span></label>
-                            <input type="text" x-model="aadhaarDisplay" @input="formatAadhaar($event)" maxlength="14" placeholder="XXXX XXXX XXXX"
+                            <input type="text" x-model="aadhaarDisplay" @input="formatAadhaar($event)" maxlength="14" placeholder="XXXX XXXX XXXX" autocomplete="off"
                                    @keydown.enter="saveRequest()"
                                    class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none font-mono tracking-widest">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Name as per Aadhaar <span class="text-red-500">*</span></label>
-                            <input type="text" x-model="currentRequest.aadhaarName" placeholder="Full Name"
+                            <input type="text" x-model="currentRequest.aadhaarName" placeholder="Full Name" autocomplete="off"
                                    @keydown.enter="saveRequest()"
                                    class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
                         </div>
@@ -391,15 +403,19 @@
                                            @focus="open = true; search = currentRequest.billingUid" 
                                            @input="open = true; search = currentRequest.billingUid" 
                                            @click.away="open = false"
-                                           placeholder="Search or Enter UID" 
+                                           placeholder="Search or Enter UID" autocomplete="off"
                                            class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none pr-10">
                                     <div class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                                         <i data-lucide="chevron-down" class="w-5 h-5"></i>
                                     </div>
                                 </div>
                                 <div x-show="open" class="absolute z-50 w-full mt-1 bg-white border rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                                    <div x-show="uids.length === 0" class="px-4 py-3 text-center">
+                                        <p class="text-xs text-red-500 mb-2">Failed to load UIDs</p>
+                                        <button @click.stop="fetchUids()" class="text-xs font-bold text-blue-600 hover:underline">Retry Loading</button>
+                                    </div>
                                     <template x-for="u in (uids || []).filter(i => (i.uid || '').toLowerCase().includes((search || '').toLowerCase()) || (i.unitName || '').toLowerCase().includes((search || '').toLowerCase()))">
-                                        <div @mousedown="currentRequest.billingUid = u.uid; currentRequest.billingName = u.unitName; open = false; search = u.uid" 
+                                        <div @click="currentRequest.billingUid = u.uid; currentRequest.billingName = u.unitName; open = false; search = u.uid" 
                                              class="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-0">
                                             <div class="font-bold text-sm" x-text="u.uid"></div>
                                             <div class="text-xs text-gray-500" x-text="u.unitName"></div>
@@ -419,7 +435,8 @@
                         <!-- Pincode -->
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Pincode <span class="text-red-500">*</span></label>
-                            <input type="tel" x-model="currentRequest.pincode" maxlength="6" placeholder="6 digit pincode"
+                            <input type="tel" x-model="currentRequest.pincode" maxlength="6" placeholder="6 digit pincode" autocomplete="off"
+                                   @input="currentRequest.pincode = $event.target.value.replace(/\D/g, '')"
                                    @keydown.enter="saveRequest()"
                                    class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
                         </div>
@@ -434,8 +451,8 @@
                         <!-- 2nd Number -->
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">2nd Number for OTP <span class="text-red-500">*</span></label>
-                            <input type="tel" x-model="currentRequest.secondaryOtpMobile" maxlength="10" placeholder="10 digit mobile"
-                                   @input="checkSecondaryMobile()"
+                            <input type="tel" x-model="currentRequest.secondaryOtpMobile" maxlength="10" placeholder="10 digit mobile" autocomplete="off"
+                                   @input="currentRequest.secondaryOtpMobile = $event.target.value.replace(/\D/g, ''); checkSecondaryMobile()"
                                    @keydown.enter="saveRequest()"
                                    class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
                         </div>
@@ -492,7 +509,12 @@
                         </div>
                     </div>
 
-                    <template x-if="uidDetails">
+                    <div x-show="uidLoading" class="bg-blue-50/50 p-6 rounded-xl border border-dashed border-blue-200 flex flex-col items-center justify-center gap-3">
+                        <div class="animate-spin border-2 border-blue-600 border-t-transparent rounded-full w-6 h-6"></div>
+                        <p class="text-xs text-blue-600 font-bold uppercase tracking-widest">Updating Details...</p>
+                    </div>
+
+                    <template x-if="uidDetails && !uidLoading">
                         <div class="bg-blue-50 p-4 rounded-xl space-y-3 border border-blue-100 mt-4">
                             <div class="flex justify-between text-xs text-blue-600 font-bold uppercase tracking-wider">
                                 <span>Zone: <span class="text-blue-900" x-text="uidDetails.zone"></span></span>
@@ -550,6 +572,23 @@
 
     </main>
 
+    <!-- Age Confirmation Modal -->
+    <div x-show="showAgeConfirm" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <div class="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600 mx-auto">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+            </div>
+            <div class="text-center space-y-2">
+                <h3 class="text-lg font-bold">Age Confirmation</h3>
+                <p class="text-sm text-gray-500">The Date of Birth entered indicates the applicant is under 18 years old. Do you confirm this is correct?</p>
+            </div>
+            <div class="flex gap-3">
+                <button @click="showAgeConfirm = false" class="flex-1 px-4 py-2 border rounded-xl font-medium hover:bg-gray-50">No, Edit</button>
+                <button @click="confirmSaveUnder18()" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Yes, Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Global Toasts -->
     <div class="fixed bottom-6 left-4 right-4 z-50 flex flex-col gap-3">
         <template x-for="t in toasts" :key="t.id">
@@ -585,12 +624,15 @@
                 uids: [],
                 uidDetails: null,
                 uidLoading: false,
+                lastUidFetched: null,
                 requests: [],
                 requestsLoading: false,
                 currentRequest: {},
                 aadhaarDisplay: '',
                 billingLoading: false,
                 toasts: [],
+                showAgeConfirm: false,
+                ageConfirmed: false,
 
                 init() {
                     lucide.createIcons();
@@ -818,26 +860,46 @@
                 },
 
                 async lookupUid(uid) {
-                    if (!uid) return;
+                    if (!uid) {
+                        this.uidDetails = null;
+                        this.lastUidFetched = null;
+                        return;
+                    }
+                    
+                    this.lastUidFetched = uid;
                     this.uidLoading = true;
-                    this.uidDetails = null; // Clear previous details while loading
+                    
                     try {
                         const res = await fetch(GAS_URL + '?action=mobilePlan_getUidDetails&uid=' + uid);
                         const result = await res.json();
                         
-                        if (result && !result.error) {
-                            this.uidDetails = result;
+                        // Race condition check: Only update if this is still the UID we want
+                        if (this.lastUidFetched === uid) {
+                            if (result && !result.error) {
+                                this.uidDetails = result;
+                            } else {
+                                this.uidDetails = null;
+                            }
                         }
                     } catch (e) {
                         console.error('Lookup error:', e);
+                        if (this.lastUidFetched === uid) this.uidDetails = null;
                     } finally {
-                        this.uidLoading = false;
+                        if (this.lastUidFetched === uid) {
+                            this.uidLoading = false;
+                        }
                     }
                 },
 
                 async saveProfile() {
                     if (!this.profile.name || !this.profile.primaryMobile || !this.profile.uid) {
                         return this.showToast('All fields are mandatory', 'error');
+                    }
+
+                    // UID Validation - Must be from the list
+                    const validUid = this.uids.find(u => u.uid === this.profile.uid);
+                    if (!validUid) {
+                        return this.showToast('Please select a valid Unit UID from the dropdown list.', 'error');
                     }
                     
                     // Indian Mobile Validation
@@ -928,7 +990,7 @@
                 checkExpiry() {
                     const today = new Date().toISOString().split('T')[0];
                     if (this.currentRequest.expiryDate < today) {
-                        this.showToast('The date entered has already expired. Please confirm.', 'success');
+                        this.showToast('The date entered has already expired. Please confirm.', 'error');
                     }
                 },
 
@@ -946,7 +1008,7 @@
                     // Mandatory Fields Check
                     const required = [
                         'existingMobile', 'existingOperator', 'newOperator', 
-                        'aadhaarNo', 'aadhaarName', 'dob', 'billingUid', 
+                        'aadhaarNo', 'aadhaarName', 'dob', 'billingUid', 'billingName',
                         'pincode', 'expiryDate', 'secondaryOtpMobile'
                     ];
                     
@@ -956,11 +1018,39 @@
                         }
                     }
 
-                    if (this.currentRequest.existingMobile.length !== 10) {
-                        return this.showToast('Invalid Mobile Number', 'error');
+                    // UID Validation - Must be from the list
+                    const validBillingUid = this.uids.find(u => u.uid === this.currentRequest.billingUid);
+                    if (!validBillingUid) {
+                        return this.showToast('Please select a valid Billing UID from the dropdown list.', 'error');
                     }
-                    if (this.currentRequest.aadhaarNo.length !== 12) {
-                        return this.showToast('Invalid Aadhaar Number', 'error');
+
+                    // Ensure billing name is populated
+                    if (!this.currentRequest.billingName) {
+                        this.currentRequest.billingName = validBillingUid.unitName;
+                    }
+
+                    const mobileRegex = /^[6-9]\d{9}$/;
+                    if (!mobileRegex.test(this.currentRequest.existingMobile)) {
+                        return this.showToast('Invalid Existing Mobile Number', 'error');
+                    }
+                    if (!mobileRegex.test(this.currentRequest.secondaryOtpMobile)) {
+                        return this.showToast('Invalid Secondary OTP Mobile Number', 'error');
+                    }
+                    if (!/^\d{12}$/.test(this.currentRequest.aadhaarNo)) {
+                        return this.showToast('Invalid Aadhaar Number (must be 12 digits)', 'error');
+                    }
+                    if (!/^\d{6}$/.test(this.currentRequest.pincode)) {
+                        return this.showToast('Invalid Pincode (must be 6 digits)', 'error');
+                    }
+
+                    // Age Validation
+                    const age = this.calculateAge(this.currentRequest.dob);
+                    if (age < 0) {
+                        return this.showToast('Date of Birth cannot be in the future', 'error');
+                    }
+                    if (age < 18 && !this.ageConfirmed) {
+                        this.showAgeConfirm = true;
+                        return;
                     }
 
                     const res = await this.callApi('mobilePlan_saveRequest', { requestData: this.currentRequest });
@@ -968,7 +1058,25 @@
                         this.showToast('Request saved successfully!');
                         this.fetchRequests();
                         this.step = 'dashboard';
+                        this.ageConfirmed = false; // Reset for next time
                     }
+                },
+
+                calculateAge(dobString) {
+                    const birthday = new Date(dobString);
+                    const today = new Date();
+                    let age = today.getFullYear() - birthday.getFullYear();
+                    const m = today.getMonth() - birthday.getMonth();
+                    if (m < 0 || (m === 0 && today.getDate() < birthday.getDate())) {
+                        age--;
+                    }
+                    return age;
+                },
+
+                confirmSaveUnder18() {
+                    this.showAgeConfirm = false;
+                    this.ageConfirmed = true;
+                    this.saveRequest();
                 },
 
                 logout() {
