@@ -26,9 +26,17 @@
                 <h1 class="font-bold text-lg tracking-tight">Mobile Plan</h1>
             </div>
             <template x-if="isLoggedIn">
-                <button @click="logout()" class="text-gray-500 hover:text-red-600 transition-colors">
-                    <i data-lucide="log-out" class="w-5 h-5"></i>
-                </button>
+                <div class="flex items-center gap-3">
+                    <template x-if="profile.isAdmin">
+                        <a href="admin-dashboard.html" class="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors flex items-center gap-1" title="Admin Dashboard">
+                            <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+                            <span class="text-xs font-bold hidden sm:inline">Admin</span>
+                        </a>
+                    </template>
+                    <button @click="logout()" class="text-gray-500 hover:text-red-600 transition-colors">
+                        <i data-lucide="log-out" class="w-5 h-5"></i>
+                    </button>
+                </div>
             </template>
         </div>
     </header>
@@ -620,7 +628,7 @@
                 resendTimer: 0,
                 canResend: false,
                 resendInterval: null,
-                profile: { email: '', uid: '', name: '', primaryMobile: '', telegramId: '' },
+                profile: { email: '', uid: '', name: '', primaryMobile: '', telegramId: '', isAdmin: false },
                 uids: [],
                 uidDetails: null,
                 uidLoading: false,
@@ -715,6 +723,7 @@
                 },
 
                 async requestOtp(method = 'AUTO') {
+                    this.email = String(this.email || '').toLowerCase().trim();
                     if (!this.email.includes('@bkivv.org')) {
                         return this.showToast('Please use a @bkivv.org email', 'error');
                     }
@@ -798,11 +807,13 @@
                 async verifyOtp() {
                     const otp = this.otpArray.join('');
                     const res = await this.callApi('mobilePlan_verifyOtp', { email: this.email, otp });
+                    console.log("OTP Verification Result:", res);
                     if (res) {
                         this.isLoggedIn = true;
                         localStorage.setItem('portal_email', this.email);
                         if (res.profile) {
                             this.profile = res.profile;
+                            console.log("Logged in Profile:", this.profile);
                             if (this.profile.uid) {
                                 this.lookupUid(this.profile.uid);
                             }
@@ -819,6 +830,7 @@
                 async fetchProfile() {
                     const res = await fetch(GAS_URL + '?action=mobilePlan_getProfile&email=' + this.email);
                     const result = await res.json();
+                    console.log("Profile Fetch Result:", result);
                     if (result && !result.error && typeof result === 'object' && !Array.isArray(result)) {
                         this.profile = result;
                         this.isLoggedIn = true;
@@ -1084,7 +1096,7 @@
                     this.isLoggedIn = false;
                     this.email = '';
                     this.otpArray = ['', '', '', '', '', ''];
-                    this.profile = { email: '', uid: '', name: '', primaryMobile: '', telegramId: '' };
+                    this.profile = { email: '', uid: '', name: '', primaryMobile: '', telegramId: '', isAdmin: false };
                     this.requests = [];
                     this.currentRequest = {};
                     this.uidDetails = null;
