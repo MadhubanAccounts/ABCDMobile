@@ -801,22 +801,19 @@
                 },
 
                 handleOtpBackspace(e, index) {
-                    if (!this.otpArray[index] && index > 0) document.getElementById('otp-' + (index - 1)).focus();
+                    if (!e.target.value && index > 0) document.getElementById('otp-' + (index - 1)).focus();
                 },
 
                 async verifyOtp() {
                     const otp = this.otpArray.join('');
+                    if (otp.length < 6) return;
                     const res = await this.callApi('mobilePlan_verifyOtp', { email: this.email, otp });
-                    console.log("OTP Verification Result:", res);
                     if (res) {
                         this.isLoggedIn = true;
                         localStorage.setItem('portal_email', this.email);
                         if (res.profile) {
                             this.profile = res.profile;
-                            console.log("Logged in Profile:", this.profile);
-                            if (this.profile.uid) {
-                                this.lookupUid(this.profile.uid);
-                            }
+                            if (this.profile.uid) this.lookupUid(this.profile.uid);
                             this.fetchRequests();
                             this.step = 'dashboard';
                         } else {
@@ -828,78 +825,45 @@
                 },
 
                 async fetchProfile() {
-                    const res = await fetch(GAS_URL + '?action=mobilePlan_getProfile&email=' + this.email);
-                    const result = await res.json();
-                    console.log("Profile Fetch Result:", result);
-                    if (result && !result.error && typeof result === 'object' && !Array.isArray(result)) {
-                        this.profile = result;
+                    const res = await this.callApi('mobilePlan_getProfile', { email: this.email });
+                    if (res) {
+                        this.profile = res;
                         this.isLoggedIn = true;
-                        this.lookupUid(this.profile.uid);
+                        if (this.profile.uid) this.lookupUid(this.profile.uid);
                         this.fetchRequests();
                         this.step = 'dashboard';
                     }
                 },
 
                 async fetchUids() {
+                    this.uidLoading = true;
                     try {
-                        const res = await fetch(GAS_URL + '?action=mobilePlan_getUids');
-                        const result = await res.json();
-                        
-                        let rawData = [];
-                        if (Array.isArray(result)) {
-                            rawData = result;
-                        } else if (result && Array.isArray(result.data)) {
-                            rawData = result.data;
-                        } else if (result && typeof result === 'object') {
-                            const firstArray = Object.values(result).find(val => Array.isArray(val));
-                            if (firstArray) rawData = firstArray;
-                        }
-
-                        // Filter for PBKIVV institute UIDs
-                        // The backend now returns standard keys: uid, unitName, zone, subZone, institute
-                        this.uids = rawData.filter(u => {
-                            const inst = u.institute;
-                            return inst && inst.toString().trim().toUpperCase() === 'PBKIVV';
-                        });
-                        
-                        if (this.uids.length === 0 && rawData.length > 0) {
-                            console.warn('UID filter returned 0 results. Check if "institute" column contains "PBKIVV"');
-                        }
+                        const res = await fetch(GAS_URL + "?action=mobilePlan_getUids");
+                        const data = await res.json();
+                        this.uids = Array.isArray(data) ? data : [];
                     } catch (e) {
-                        console.error('Error fetching UIDs:', e);
+                        console.error("UID Fetch Error:", e);
                         this.uids = [];
+                    } finally {
+                        this.uidLoading = false;
                     }
                 },
 
                 async lookupUid(uid) {
-                    if (!uid) {
-                        this.uidDetails = null;
-                        this.lastUidFetched = null;
-                        return;
-                    }
-                    
-                    this.lastUidFetched = uid;
+                    if (!uid || uid === this.lastUidFetched) return;
                     this.uidLoading = true;
-                    
+                    this.uidDetails = null;
                     try {
-                        const res = await fetch(GAS_URL + '?action=mobilePlan_getUidDetails&uid=' + uid);
+                        const res = await fetch(GAS_URL + "?action=mobilePlan_getUidDetails&uid=" + uid);
                         const result = await res.json();
-                        
-                        // Race condition check: Only update if this is still the UID we want
-                        if (this.lastUidFetched === uid) {
-                            if (result && !result.error) {
-                                this.uidDetails = result;
-                            } else {
-                                this.uidDetails = null;
-                            }
+                        if (result && !result.error) {
+                            this.uidDetails = result;
+                            this.lastUidFetched = uid;
                         }
                     } catch (e) {
-                        console.error('Lookup error:', e);
-                        if (this.lastUidFetched === uid) this.uidDetails = null;
+                        console.error("Lookup error:", e);
                     } finally {
-                        if (this.lastUidFetched === uid) {
-                            this.uidLoading = false;
-                        }
+                        this.uidLoading = false;
                     }
                 },
 
@@ -907,19 +871,6 @@
                     if (!this.profile.name || !this.profile.primaryMobile || !this.profile.uid) {
                         return this.showToast('All fields are mandatory', 'error');
                     }
-
-                    // UID Validation - Must be from the list
-                    const validUid = this.uids.find(u => u.uid === this.profile.uid);
-                    if (!validUid) {
-                        return this.showToast('Please select a valid Unit UID from the dropdown list.', 'error');
-                    }
-                    
-                    // Indian Mobile Validation
-                    const mobileRegex = /^[6-9]\d{9}$/;
-                    if (!mobileRegex.test(this.profile.primaryMobile)) {
-                        return this.showToast('Please enter a valid 10-digit Indian mobile number', 'error');
-                    }
-
                     const res = await this.callApi('mobilePlan_saveProfile', { profileData: this.profile });
                     if (res) {
                         this.showToast('Profile linked successfully!');
@@ -931,7 +882,7 @@
                 async fetchRequests() {
                     this.requestsLoading = true;
                     try {
-                        const res = await fetch(GAS_URL + '?action=mobilePlan_getRequests&email=' + this.email);
+                        const res = await fetch(GAS_URL + "?action=mobilePlan_getRequests&email=" + this.email);
                         const data = await res.json();
                         this.requests = Array.isArray(data) ? data : [];
                     } catch (e) {
@@ -942,23 +893,51 @@
                     setTimeout(() => lucide.createIcons(), 100);
                 },
 
+                async saveRequest() {
+                    const required = ['existingMobile', 'existingOperator', 'newOperator', 'aadhaarNo', 'aadhaarName', 'dob', 'billingUid', 'pincode', 'expiryDate', 'secondaryOtpMobile'];
+                    for (const field of required) {
+                        if (!this.currentRequest[field]) return this.showToast('All fields marked with * are mandatory', 'error');
+                    }
+
+                    // Age Check
+                    const age = this.calculateAge(this.currentRequest.dob);
+                    if (age < 18 && !this.ageConfirmed) {
+                        this.showAgeConfirm = true;
+                        return;
+                    }
+
+                    const res = await this.callApi('mobilePlan_saveRequest', { requestData: this.currentRequest });
+                    if (res) {
+                        this.showToast('Request saved successfully!');
+                        this.ageConfirmed = false;
+                        this.fetchRequests();
+                        this.step = 'dashboard';
+                    }
+                },
+
+                calculateAge(dob) {
+                    const today = new Date();
+                    const birthday = new Date(dob);
+                    let age = today.getFullYear() - birthday.getFullYear();
+                    const m = today.getMonth() - birthday.getMonth();
+                    if (m < 0 || (m === 0 && today.getDate() < birthday.getDate())) {
+                        age--;
+                    }
+                    return age;
+                },
+
+                confirmSaveUnder18() {
+                    this.showAgeConfirm = false;
+                    this.ageConfirmed = true;
+                    this.saveRequest();
+                },
+
                 openForm() {
-                    this.currentRequest = {
-                        email: this.email,
-                        requestType: 'SHIFT',
-                        billingUid: this.profile.uid,
-                        billingName: '',
-                        existingOperator: '',
-                        newOperator: '',
-                        status: 'Applied'
-                    };
-                    
-                    // Auto-fill billing name from uids list
+                    this.currentRequest = { email: this.email, requestType: 'SHIFT', billingUid: this.profile.uid, billingName: '', existingOperator: '', newOperator: '', status: 'Applied' };
                     if (Array.isArray(this.uids)) {
                         const found = this.uids.find(u => u.uid === this.profile.uid);
                         if (found) this.currentRequest.billingName = found.unitName;
                     }
-
                     this.aadhaarDisplay = '';
                     this.step = 'form';
                     setTimeout(() => lucide.createIcons(), 100);
@@ -966,7 +945,6 @@
 
                 editRequest(req) {
                     this.currentRequest = { ...req };
-                    if (!this.currentRequest.requestType) this.currentRequest.requestType = 'SHIFT';
                     this.aadhaarDisplay = this.formatAadhaarString(req.aadhaarNo);
                     this.step = 'form';
                     setTimeout(() => lucide.createIcons(), 100);
@@ -974,13 +952,11 @@
 
                 async deleteRequest(requestId) {
                     if (!confirm('Are you sure you want to delete this request?')) return;
-                    this.currentRequest.requestId = requestId; // Track which one is being deleted
                     const res = await this.callApi('mobilePlan_deleteRequest', { requestId, email: this.email });
                     if (res) {
                         this.showToast('Request deleted successfully');
                         this.fetchRequests();
                     }
-                    this.currentRequest.requestId = null;
                 },
 
                 formatAadhaar(e) {
@@ -995,100 +971,20 @@
                     return parts ? parts.join(' ') : val;
                 },
 
-                async lookupBillingUid() {
-                    // Deprecated in favor of searchable dropdown
-                },
-
                 checkExpiry() {
-                    const today = new Date().toISOString().split('T')[0];
-                    if (this.currentRequest.expiryDate < today) {
-                        this.showToast('The date entered has already expired. Please confirm.', 'error');
+                    const expiry = new Date(this.currentRequest.expiryDate);
+                    const today = new Date();
+                    const diffTime = expiry - today;
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    if (diffDays > 7) {
+                        this.showToast("Note: Porting is recommended when plan expiry is within 7 days.", "info");
                     }
                 },
 
                 checkSecondaryMobile() {
-                    if (this.currentRequest.secondaryOtpMobile === this.currentRequest.existingMobile && this.currentRequest.existingMobile.length === 10) {
-                        this.showToast('This is the same as the connection number.', 'success');
+                    if (this.currentRequest.secondaryOtpMobile === this.currentRequest.existingMobile) {
+                        this.showToast("Secondary number should be different from the porting number.", "error");
                     }
-                },
-
-                async saveRequest() {
-                    if (this.currentRequest.requestType === 'NEW') {
-                        return this.showToast('New Connection requests are coming soon.', 'error');
-                    }
-
-                    // Mandatory Fields Check
-                    const required = [
-                        'existingMobile', 'existingOperator', 'newOperator', 
-                        'aadhaarNo', 'aadhaarName', 'dob', 'billingUid', 'billingName',
-                        'pincode', 'expiryDate', 'secondaryOtpMobile'
-                    ];
-                    
-                    for (const field of required) {
-                        if (!this.currentRequest[field]) {
-                            return this.showToast('All fields marked with * are mandatory', 'error');
-                        }
-                    }
-
-                    // UID Validation - Must be from the list
-                    const validBillingUid = this.uids.find(u => u.uid === this.currentRequest.billingUid);
-                    if (!validBillingUid) {
-                        return this.showToast('Please select a valid Billing UID from the dropdown list.', 'error');
-                    }
-
-                    // Ensure billing name is populated
-                    if (!this.currentRequest.billingName) {
-                        this.currentRequest.billingName = validBillingUid.unitName;
-                    }
-
-                    const mobileRegex = /^[6-9]\d{9}$/;
-                    if (!mobileRegex.test(this.currentRequest.existingMobile)) {
-                        return this.showToast('Invalid Existing Mobile Number', 'error');
-                    }
-                    if (!mobileRegex.test(this.currentRequest.secondaryOtpMobile)) {
-                        return this.showToast('Invalid Secondary OTP Mobile Number', 'error');
-                    }
-                    if (!/^\d{12}$/.test(this.currentRequest.aadhaarNo)) {
-                        return this.showToast('Invalid Aadhaar Number (must be 12 digits)', 'error');
-                    }
-                    if (!/^\d{6}$/.test(this.currentRequest.pincode)) {
-                        return this.showToast('Invalid Pincode (must be 6 digits)', 'error');
-                    }
-
-                    // Age Validation
-                    const age = this.calculateAge(this.currentRequest.dob);
-                    if (age < 0) {
-                        return this.showToast('Date of Birth cannot be in the future', 'error');
-                    }
-                    if (age < 18 && !this.ageConfirmed) {
-                        this.showAgeConfirm = true;
-                        return;
-                    }
-
-                    const res = await this.callApi('mobilePlan_saveRequest', { requestData: this.currentRequest });
-                    if (res) {
-                        this.showToast('Request saved successfully!');
-                        this.fetchRequests();
-                        this.step = 'dashboard';
-                        this.ageConfirmed = false; // Reset for next time
-                    }
-                },
-
-                calculateAge(dobString) {
-                    const birthday = new Date(dobString);
-                    const today = new Date();
-                    let age = today.getFullYear() - birthday.getFullYear();
-                    const m = today.getMonth() - birthday.getMonth();
-                    if (m < 0 || (m === 0 && today.getDate() < birthday.getDate())) {
-                        age--;
-                    }
-                    return age;
-                },
-
-                confirmSaveUnder18() {
-                    this.showAgeConfirm = false;
-                    this.ageConfirmed = true;
-                    this.saveRequest();
                 },
 
                 logout() {

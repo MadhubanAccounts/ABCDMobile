@@ -51,7 +51,7 @@
                     lucide.createIcons();
                     this.email = localStorage.getItem('portal_email');
                     if (!this.email) {
-                        window.location.href = 'mobile-portal.html';
+                        window.location.href = 'index.html';
                         return;
                     }
                     await this.fetchAdminData();
@@ -69,7 +69,7 @@
                         
                         if (result.error || !result.isAdmin) {
                             alert('Unauthorized access');
-                            window.location.href = 'mobile-portal.html';
+                            window.location.href = 'index.html';
                             return;
                         }
 
@@ -454,7 +454,7 @@
 
                 logout() {
                     localStorage.removeItem('portal_email');
-                    window.location.href = 'mobile-portal.html';
+                    window.location.href = 'index.html';
                 },
 
                 formatDate(iso) {
@@ -473,7 +473,7 @@
     <header class="bg-white border-b sticky top-0 z-30">
         <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
             <div class="flex items-center gap-2">
-                <a href="mobile-portal.html" class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">B</a>
+                <a href="index.html" class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">B</a>
                 <h1 class="font-bold text-lg tracking-tight">Admin Dashboard</h1>
             </div>
             <div class="flex items-center gap-4">
