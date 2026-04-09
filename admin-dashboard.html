@@ -43,6 +43,8 @@
                     activeUsers: 0,
                     pendingRequests: 0,
                     processedRequests: 0,
+                    newRequests: 0,
+                    shiftRequests: 0,
                     duplicateMobilesCount: 0,
                     orphanedRequestsCount: 0
                 },
@@ -103,6 +105,8 @@
                     this.stats.activeUsers = this.profiles.length;
                     this.stats.pendingRequests = this.requests.filter(r => r.status === 'Applied' || r.status === 'Pending').length;
                     this.stats.processedRequests = this.requests.filter(r => r.status === 'Processed' || r.status === 'Sim Delivered').length;
+                    this.stats.newRequests = this.requests.filter(r => r.requestType === 'NEW').length;
+                    this.stats.shiftRequests = this.requests.filter(r => r.requestType === 'SHIFT' || !r.requestType).length;
 
                     // Calculate Duplicate Mobiles
                     const mobileCounts = {};
@@ -671,7 +675,18 @@
                     </div>
                 </div>
                 <div class="text-xl font-bold" x-text="stats.totalRequests">0</div>
-                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Total Requests</div>
+                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider mb-2">Total Requests</div>
+                <div class="flex items-center gap-3 pt-2 border-t border-gray-50">
+                    <div>
+                        <div class="text-xs font-bold text-blue-600" x-text="stats.newRequests">0</div>
+                        <div class="text-[8px] uppercase font-bold text-gray-400 tracking-wider">New</div>
+                    </div>
+                    <div class="w-px h-4 bg-gray-100"></div>
+                    <div>
+                        <div class="text-xs font-bold text-indigo-600" x-text="stats.shiftRequests">0</div>
+                        <div class="text-[8px] uppercase font-bold text-gray-400 tracking-wider">Shifting</div>
+                    </div>
+                </div>
             </div>
             <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
                 <div class="flex items-center justify-between mb-2">
