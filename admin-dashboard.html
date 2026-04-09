@@ -35,7 +35,6 @@
                 email: '',
                 isAuthorized: false,
                 loading: false,
-                searchQuery: '',
                 requests: [],
                 profiles: [],
                 submissions: [],
@@ -43,8 +42,12 @@
                     totalRequests: 0,
                     activeUsers: 0,
                     pendingRequests: 0,
-                    processedRequests: 0
+                    processedRequests: 0,
+                    duplicateMobilesCount: 0
                 },
+                duplicateMobiles: [],
+                showDuplicatesModal: false,
+                aadhaarDistribution: [],
                 operatorStats: [],
 
                 async init() {
@@ -96,7 +99,39 @@
                     this.stats.totalRequests = this.requests.length;
                     this.stats.activeUsers = this.profiles.length;
                     this.stats.pendingRequests = this.requests.filter(r => r.status === 'Applied' || r.status === 'Pending').length;
-                    this.stats.processedRequests = this.requests.filter(r => r.status === 'Processed').length;
+                    this.stats.processedRequests = this.requests.filter(r => r.status === 'Processed' || r.status === 'Sim Delivered').length;
+
+                    // Calculate Duplicate Mobiles
+                    const mobileCounts = {};
+                    this.requests.forEach(r => {
+                        const m = r.existingMobile;
+                        if (m) mobileCounts[m] = (mobileCounts[m] || 0) + 1;
+                    });
+                    this.duplicateMobiles = Object.entries(mobileCounts)
+                        .filter(([m, count]) => count > 1)
+                        .map(([mobile, count]) => ({ mobile, count }))
+                        .sort((a, b) => b.count - a.count);
+                    this.stats.duplicateMobilesCount = this.duplicateMobiles.length;
+
+                    // Calculate Aadhaar Distribution
+                    const aadhaarCounts = {};
+                    this.requests.forEach(r => {
+                        const a = r.aadhaarNo;
+                        if (a) aadhaarCounts[a] = (aadhaarCounts[a] || 0) + 1;
+                    });
+                    
+                    const freqMap = {};
+                    Object.values(aadhaarCounts).forEach(count => {
+                        freqMap[count] = (freqMap[count] || 0) + 1;
+                    });
+
+                    this.aadhaarDistribution = Object.entries(freqMap)
+                        .map(([connections, holders]) => ({
+                            connections: parseInt(connections),
+                            holders: holders,
+                            totalConnections: parseInt(connections) * holders
+                        }))
+                        .sort((a, b) => a.connections - b.connections);
                 },
 
                 calculateOperatorStats() {
@@ -113,23 +148,12 @@
                     });
                 },
 
-                get filteredRequests() {
-                    if (!this.searchQuery) return this.requests;
-                    const q = this.searchQuery.toLowerCase();
-                    return this.requests.filter(r => 
-                        (String(r.aadhaarName || '')).toLowerCase().includes(q) ||
-                        (String(r.existingMobile || '')).toLowerCase().includes(q) ||
-                        (String(r.billingUid || '')).toLowerCase().includes(q) ||
-                        (String(r.billingName || '')).toLowerCase().includes(q) ||
-                        (String(r.email || '')).toLowerCase().includes(q)
-                    );
-                },
-
                 renderCharts() {
                     try { this.renderTrendsChart(); } catch (e) { console.error("Trends Chart Error:", e); }
                     try { this.renderOperatorChart(); } catch (e) { console.error("Operator Chart Error:", e); }
                     try { this.renderZoneChart(); } catch (e) { console.error("Zone Chart Error:", e); }
                     try { this.renderSubZoneChart(); } catch (e) { console.error("Sub-Zone Chart Error:", e); }
+                    try { this.renderAadhaarChart(); } catch (e) { console.error("Aadhaar Chart Error:", e); }
                 },
 
                 renderTrendsChart() {
@@ -452,6 +476,142 @@
                         .call(d3.axisLeft(y).ticks(5));
                 },
 
+                renderAadhaarChart() {
+                    const container = d3.select("#aadhaar-chart");
+                    container.selectAll("*").remove();
+                    
+                    const width = container.node().getBoundingClientRect().width;
+                    const height = 350;
+                    const margin = { top: 40, right: 60, bottom: 50, left: 60 };
+
+                    const data = this.aadhaarDistribution;
+
+                    if (data.length === 0) {
+                        container.append("div")
+                            .attr("class", "flex items-center justify-center h-full text-gray-400 text-sm")
+                            .text("No Aadhaar distribution data available");
+                        return;
+                    }
+
+                    const x = d3.scaleBand()
+                        .domain(data.map(d => d.connections))
+                        .range([margin.left, width - margin.right])
+                        .padding(0.3);
+
+                    const yHolders = d3.scaleLinear()
+                        .domain([0, d3.max(data, d => d.holders) * 1.2])
+                        .range([height - margin.bottom, margin.top]);
+
+                    const yTotal = d3.scaleLinear()
+                        .domain([0, d3.max(data, d => d.totalConnections) * 1.2])
+                        .range([height - margin.bottom, margin.top]);
+
+                    const svg = container.append("svg")
+                        .attr("width", width)
+                        .attr("height", height);
+
+                    // Holders Bars
+                    svg.append("g")
+                        .selectAll("rect")
+                        .data(data)
+                        .enter()
+                        .append("rect")
+                        .attr("x", d => x(d.connections))
+                        .attr("y", d => yHolders(d.holders))
+                        .attr("height", d => yHolders(0) - yHolders(d.holders))
+                        .attr("width", x.bandwidth())
+                        .attr("fill", "#6366f1")
+                        .attr("rx", 4)
+                        .attr("opacity", 0.8);
+
+                    // Total Connections Line
+                    const line = d3.line()
+                        .x(d => x(d.connections) + x.bandwidth() / 2)
+                        .y(d => yTotal(d.totalConnections))
+                        .curve(d3.curveMonotoneX);
+
+                    svg.append("path")
+                        .datum(data)
+                        .attr("fill", "none")
+                        .attr("stroke", "#ef4444")
+                        .attr("stroke-width", 3)
+                        .attr("d", line);
+
+                    svg.selectAll(".dot")
+                        .data(data)
+                        .enter()
+                        .append("circle")
+                        .attr("cx", d => x(d.connections) + x.bandwidth() / 2)
+                        .attr("cy", d => yTotal(d.totalConnections))
+                        .attr("r", 4)
+                        .attr("fill", "#ef4444")
+                        .attr("stroke", "white")
+                        .attr("stroke-width", 2);
+
+                    // Labels for Holders
+                    svg.selectAll(".holder-label")
+                        .data(data)
+                        .enter()
+                        .append("text")
+                        .attr("x", d => x(d.connections) + x.bandwidth() / 2)
+                        .attr("y", d => yHolders(d.holders) - 5)
+                        .attr("text-anchor", "middle")
+                        .attr("font-size", "10px")
+                        .attr("font-weight", "bold")
+                        .attr("fill", "#4338ca")
+                        .text(d => d.holders + ' Holders');
+
+                    // Labels for Total
+                    svg.selectAll(".total-label")
+                        .data(data)
+                        .enter()
+                        .append("text")
+                        .attr("x", d => x(d.connections) + x.bandwidth() / 2)
+                        .attr("y", d => yTotal(d.totalConnections) - 15)
+                        .attr("text-anchor", "middle")
+                        .attr("font-size", "10px")
+                        .attr("font-weight", "bold")
+                        .attr("fill", "#b91c1c")
+                        .text(d => 'Total: ' + d.totalConnections);
+
+                    // X Axis
+                    svg.append("g")
+                        .attr("transform", `translate(0,${height - margin.bottom})`)
+                        .call(d3.axisBottom(x))
+                        .append("text")
+                        .attr("x", width / 2)
+                        .attr("y", 40)
+                        .attr("fill", "black")
+                        .attr("font-weight", "bold")
+                        .text("Connections per Aadhaar");
+
+                    // Y Axis Left (Holders)
+                    svg.append("g")
+                        .attr("transform", `translate(${margin.left},0)`)
+                        .call(d3.axisLeft(yHolders).ticks(5))
+                        .append("text")
+                        .attr("transform", "rotate(-90)")
+                        .attr("y", -45)
+                        .attr("x", -height / 2)
+                        .attr("fill", "#6366f1")
+                        .attr("font-weight", "bold")
+                        .attr("text-anchor", "middle")
+                        .text("No. of Aadhaar Holders");
+
+                    // Y Axis Right (Total Connections)
+                    svg.append("g")
+                        .attr("transform", `translate(${width - margin.right},0)`)
+                        .call(d3.axisRight(yTotal).ticks(5))
+                        .append("text")
+                        .attr("transform", "rotate(-90)")
+                        .attr("y", 45)
+                        .attr("x", -height / 2)
+                        .attr("fill", "#ef4444")
+                        .attr("font-weight", "bold")
+                        .attr("text-anchor", "middle")
+                        .text("Total Connections");
+                },
+
                 logout() {
                     localStorage.removeItem('portal_email');
                     window.location.href = 'index.html';
@@ -492,43 +652,54 @@
     <main class="max-w-7xl mx-auto p-4 md:p-8 space-y-8" x-show="isAuthorized" x-cloak>
         
         <!-- Stats Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
-                        <i data-lucide="file-text" class="w-5 h-5"></i>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600">
+                        <i data-lucide="file-text" class="w-4 h-4"></i>
                     </div>
                 </div>
-                <div class="text-2xl font-bold" x-text="stats.totalRequests">0</div>
-                <div class="text-sm text-gray-500">Total Requests</div>
+                <div class="text-xl font-bold" x-text="stats.totalRequests">0</div>
+                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Total Requests</div>
             </div>
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center text-green-600">
-                        <i data-lucide="users" class="w-5 h-5"></i>
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center text-green-600">
+                        <i data-lucide="users" class="w-4 h-4"></i>
                     </div>
                 </div>
-                <div class="text-2xl font-bold" x-text="stats.activeUsers">0</div>
-                <div class="text-sm text-gray-500">Active Users</div>
+                <div class="text-xl font-bold" x-text="stats.activeUsers">0</div>
+                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Active Users</div>
             </div>
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="w-10 h-10 bg-yellow-50 rounded-xl flex items-center justify-center text-yellow-600">
-                        <i data-lucide="clock" class="w-5 h-5"></i>
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="w-8 h-8 bg-yellow-50 rounded-lg flex items-center justify-center text-yellow-600">
+                        <i data-lucide="clock" class="w-4 h-4"></i>
                     </div>
                 </div>
-                <div class="text-2xl font-bold" x-text="stats.pendingRequests">0</div>
-                <div class="text-sm text-gray-500">Pending Requests</div>
+                <div class="text-xl font-bold" x-text="stats.pendingRequests">0</div>
+                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Pending</div>
             </div>
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600">
-                        <i data-lucide="check-circle" class="w-5 h-5"></i>
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center text-purple-600">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i>
                     </div>
                 </div>
-                <div class="text-2xl font-bold" x-text="stats.processedRequests">0</div>
-                <div class="text-sm text-gray-500">Processed Requests</div>
+                <div class="text-xl font-bold" x-text="stats.processedRequests">0</div>
+                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Processed</div>
             </div>
+            <!-- Duplicate Mobiles Card -->
+            <button @click="showDuplicatesModal = true" class="bg-white p-4 rounded-2xl shadow-sm border border-orange-100 hover:border-orange-300 transition-all text-left group">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="w-8 h-8 bg-orange-50 rounded-lg flex items-center justify-center text-orange-600 group-hover:scale-110 transition-transform">
+                        <i data-lucide="copy" class="w-4 h-4"></i>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-orange-200 group-hover:text-orange-400 transition-colors"></i>
+                </div>
+                <div class="text-xl font-bold text-orange-600" x-text="stats.duplicateMobilesCount">0</div>
+                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Duplicate Mobiles</div>
+            </button>
         </div>
 
         <!-- Operator Net Gains/Losses -->
@@ -582,62 +753,40 @@
                 <h3 class="text-lg font-bold mb-6">Sub-Zone Distribution</h3>
                 <div id="sub-zone-chart" class="chart-container" style="height: 350px;"></div>
             </div>
+
+            <!-- Aadhaar Distribution -->
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-lg font-bold">Aadhaar Connection Distribution</h3>
+                    <div class="flex items-center gap-4 text-xs">
+                        <div class="flex items-center gap-1.5">
+                            <div class="w-3 h-3 bg-indigo-500 rounded-sm"></div>
+                            <span class="text-gray-500">Holders</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <div class="w-3 h-3 bg-red-500 rounded-sm"></div>
+                            <span class="text-gray-500">Total Connections</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="aadhaar-chart" class="chart-container" style="height: 350px;"></div>
+            </div>
         </div>
 
-        <!-- Global Search & Table -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div class="p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h3 class="text-lg font-bold">All Requests</h3>
-                <div class="relative max-w-sm w-full">
-                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
-                    <input type="text" x-model="searchQuery" placeholder="Search by name, mobile, UID..." 
-                           class="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
-                </div>
+        <!-- View All Requests Link -->
+        <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center space-y-4">
+            <div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto text-blue-600">
+                <i data-lucide="list" class="w-8 h-8"></i>
             </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-gray-50 text-xs uppercase font-bold text-gray-500 tracking-wider">
-                            <th class="px-6 py-4">Date</th>
-                            <th class="px-6 py-4">User</th>
-                            <th class="px-6 py-4">Mobile</th>
-                            <th class="px-6 py-4">Operator</th>
-                            <th class="px-6 py-4">Unit / Zone</th>
-                            <th class="px-6 py-4">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        <template x-for="req in filteredRequests" :key="req.requestId">
-                            <tr class="hover:bg-gray-50 transition-colors text-sm">
-                                <td class="px-6 py-4 text-gray-500" x-text="formatDate(req.updatedAt)"></td>
-                                <td class="px-6 py-4">
-                                    <div class="font-bold text-gray-900" x-text="req.aadhaarName"></div>
-                                    <div class="text-xs text-gray-500" x-text="req.email"></div>
-                                </td>
-                                <td class="px-6 py-4 font-mono" x-text="req.existingMobile"></td>
-                                <td class="px-6 py-4">
-                                    <span class="text-xs font-bold text-gray-400" x-text="req.existingOperator"></span>
-                                    <i data-lucide="arrow-right" class="inline w-3 h-3 mx-1 text-gray-300"></i>
-                                    <span class="text-xs font-bold text-blue-600" x-text="req.newOperator"></span>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <div class="font-medium" x-text="req.billingName"></div>
-                                    <div class="text-xs text-gray-400" x-text="req.billingUid"></div>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <span :class="{
-                                        'bg-blue-100 text-blue-700': req.status === 'Applied',
-                                        'bg-green-100 text-green-700': req.status === 'Processed',
-                                        'bg-yellow-100 text-yellow-700': req.status === 'Pending'
-                                    }" class="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider" x-text="req.status"></span>
-                                </td>
-                            </tr>
-                        </template>
-                    </tbody>
-                </table>
+            <div class="max-w-md mx-auto">
+                <h3 class="text-xl font-bold text-gray-900">Detailed Request Records</h3>
+                <p class="text-gray-500 mt-2">Access the complete history of all connection requests with advanced search and pagination.</p>
             </div>
-            <div x-show="filteredRequests.length === 0" class="p-12 text-center text-gray-500 italic">
-                No requests found matching your search.
+            <div class="pt-4">
+                <a href="all-requests.html" class="inline-flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100">
+                    View All Requests
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                </a>
             </div>
         </div>
     </main>
@@ -650,5 +799,52 @@
 
     <!-- Tooltip -->
     <div id="tooltip" class="tooltip"></div>
+
+    <!-- Duplicate Mobiles Modal -->
+    <div x-show="showDuplicatesModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" @click="showDuplicatesModal = false"></div>
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col max-h-[80vh]">
+            <div class="p-6 border-b flex items-center justify-between bg-orange-50">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600">
+                        <i data-lucide="copy" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900">Duplicate Mobile Numbers</h3>
+                        <p class="text-xs text-orange-600 font-medium" x-text="stats.duplicateMobilesCount + ' numbers have multiple entries'"></p>
+                    </div>
+                </div>
+                <button @click="showDuplicatesModal = false" class="p-2 hover:bg-orange-100 rounded-full transition-colors text-orange-400 hover:text-orange-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="overflow-y-auto p-2">
+                <table class="w-full text-left">
+                    <thead class="sticky top-0 bg-white z-10">
+                        <tr class="text-[10px] uppercase font-bold text-gray-400 tracking-wider border-b">
+                            <th class="px-6 py-3">Mobile Number</th>
+                            <th class="px-6 py-3 text-right">Entry Count</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50">
+                        <template x-for="item in duplicateMobiles" :key="item.mobile">
+                            <tr class="hover:bg-gray-50 transition-colors">
+                                <td class="px-6 py-4 font-mono font-bold text-gray-700" x-text="item.mobile"></td>
+                                <td class="px-6 py-4 text-right">
+                                    <span class="bg-orange-100 text-orange-700 px-2.5 py-1 rounded-lg text-xs font-bold" x-text="item.count + ' entries'"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <div x-show="duplicateMobiles.length === 0" class="p-12 text-center text-gray-400 italic">
+                    No duplicate mobile numbers found.
+                </div>
+            </div>
+            <div class="p-4 bg-gray-50 border-t text-center">
+                <p class="text-[10px] text-gray-400 uppercase font-bold tracking-widest">End of List</p>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
