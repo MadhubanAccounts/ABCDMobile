@@ -499,6 +499,15 @@
                         </label>
                         <input type="date" x-model="currentRequest.expiryDate" @change="checkExpiry()" :disabled="viewMode || currentRequest.requestType === 'NEW'"
                                class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500">
+                        
+                        <!-- Help Tip -->
+                        <div x-show="currentRequest.requestType === 'SHIFT'" class="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-100 flex items-start gap-2">
+                            <i data-lucide="info" class="w-4 h-4 text-blue-600 mt-0.5"></i>
+                            <div class="text-[11px] text-blue-700 leading-relaxed">
+                                <span class="font-bold">To know the Expiry Date:</span><br>
+                                Dial <span class="font-bold">1299</span> (Jio), <span class="font-bold">*123#</span> (Airtel & BSNL), <span class="font-bold">*199#</span> (VI)
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 2nd Number -->
@@ -641,6 +650,36 @@
         </div>
     </div>
 
+    <!-- New Connection Confirmation Modal -->
+    <div x-show="showNewConnectionModal" x-cloak
+         class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" @click.away="showNewConnectionModal = false">
+            <div class="p-6 border-b flex items-center justify-between bg-purple-600 text-white">
+                <h3 class="text-lg font-bold">New Connection Info</h3>
+                <button @click="showNewConnectionModal = false" class="hover:bg-white/20 p-1 rounded-lg transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                    <p class="text-sm text-purple-900 leading-relaxed font-medium">
+                        अगर आपके पास पहले से कोई नंबर हैं, और उसी को ही postpaid करना है तो existing number वाले दूसरे विकल्प में जायें। यह विकल्प केवल नया नंबर लेने के लिए हैं।
+                    </p>
+                </div>
+                <button @click="showNewConnectionModal = false" 
+                        class="w-full bg-purple-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-purple-200 hover:bg-purple-700 transition-all">
+                    I Understand
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Global Toasts -->
     <div class="fixed bottom-6 left-4 right-4 z-50 flex flex-col gap-3">
         <template x-for="t in toasts" :key="t.id">
@@ -686,6 +725,7 @@
                 toasts: [],
                 showAgeConfirm: false,
                 ageConfirmed: false,
+                showNewConnectionModal: false,
 
                 init() {
                     lucide.createIcons();
@@ -1081,6 +1121,7 @@
                         this.currentRequest.existingMobile = '';
                         this.currentRequest.existingOperator = '';
                         this.currentRequest.expiryDate = '';
+                        this.showNewConnectionModal = true;
                         this.showToast('Switched to New Connection. Porting details cleared.', 'info');
                     }
                     setTimeout(() => lucide.createIcons(), 100);
