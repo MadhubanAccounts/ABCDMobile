@@ -43,10 +43,13 @@
                     activeUsers: 0,
                     pendingRequests: 0,
                     processedRequests: 0,
-                    duplicateMobilesCount: 0
+                    duplicateMobilesCount: 0,
+                    orphanedRequestsCount: 0
                 },
                 duplicateMobiles: [],
+                orphanedRequests: [],
                 showDuplicatesModal: false,
+                showOrphanedModal: false,
                 aadhaarDistribution: [],
                 operatorStats: [],
 
@@ -112,6 +115,14 @@
                         .map(([mobile, count]) => ({ mobile, count }))
                         .sort((a, b) => b.count - a.count);
                     this.stats.duplicateMobilesCount = this.duplicateMobiles.length;
+
+                    // Calculate Orphaned Requests (Requests without profile)
+                    const profileEmails = new Set(this.profiles.map(p => String(p.email || '').toLowerCase().trim()));
+                    this.orphanedRequests = this.requests.filter(r => {
+                        const reqEmail = String(r.email || '').toLowerCase().trim();
+                        return reqEmail && !profileEmails.has(reqEmail);
+                    });
+                    this.stats.orphanedRequestsCount = this.orphanedRequests.length;
 
                     // Calculate Aadhaar Distribution
                     const aadhaarCounts = {};
@@ -700,6 +711,18 @@
                 <div class="text-xl font-bold text-orange-600" x-text="stats.duplicateMobilesCount">0</div>
                 <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Duplicate Mobiles</div>
             </button>
+
+            <!-- Orphaned Requests Card -->
+            <button @click="showOrphanedModal = true" class="bg-white p-4 rounded-2xl shadow-sm border border-red-100 hover:border-red-300 transition-all text-left group">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center text-red-600 group-hover:scale-110 transition-transform">
+                        <i data-lucide="user-x" class="w-4 h-4"></i>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-red-200 group-hover:text-red-400 transition-colors"></i>
+                </div>
+                <div class="text-xl font-bold text-red-600" x-text="stats.orphanedRequestsCount">0</div>
+                <div class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Requests Without Profile</div>
+            </button>
         </div>
 
         <!-- Operator Net Gains/Losses -->
@@ -795,6 +818,68 @@
     <div x-show="loading" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-4">
         <div class="animate-spin border-4 border-blue-600 border-t-transparent rounded-full w-12 h-12"></div>
         <p class="text-gray-600 font-medium">Loading Analytics...</p>
+    </div>
+
+    <!-- Orphaned Requests Modal -->
+    <div x-show="showOrphanedModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" x-cloak>
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden" @click.away="showOrphanedModal = false">
+            <div class="p-6 border-b flex items-center justify-between bg-red-600 text-white">
+                <div>
+                    <h3 class="text-lg font-bold">Requests Without Profile</h3>
+                    <p class="text-xs text-red-100">These requests exist but have no corresponding user profile data.</p>
+                </div>
+                <button @click="showOrphanedModal = false" class="hover:bg-white/20 p-1 rounded-lg transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto max-h-[70vh]">
+                <div class="mb-6 p-4 bg-red-50 rounded-xl border border-red-100">
+                    <h4 class="text-sm font-bold text-red-800 mb-2 flex items-center gap-2">
+                        <i data-lucide="help-circle" class="w-4 h-4"></i>
+                        Possible Reasons for Orphaned Records:
+                    </h4>
+                    <ul class="text-xs text-red-700 space-y-1 list-disc pl-5">
+                        <li><b>Setup Bypass:</b> Users might have accessed the request form directly without completing the one-time profile setup.</li>
+                        <li><b>Setup Failure:</b> A network error might have occurred after saving the request but before the profile was saved.</li>
+                        <li><b>Data Deletion:</b> User profiles might have been deleted from the spreadsheet while their connection requests remained.</li>
+                        <li><b>Email Mismatch:</b> Inconsistencies in email formatting (case sensitivity or trailing spaces) between the Requests and Profiles sheets.</li>
+                        <li><b>Manual Entry:</b> Records might have been added directly to the spreadsheet by an administrator.</li>
+                    </ul>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b text-[10px] uppercase font-bold text-gray-400 tracking-wider">
+                                <th class="px-4 py-3">Email</th>
+                                <th class="px-4 py-3">Aadhaar Name</th>
+                                <th class="px-4 py-3">Mobile</th>
+                                <th class="px-4 py-3">Status</th>
+                                <th class="px-4 py-3">Updated At</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-sm">
+                            <template x-for="req in orphanedRequests" :key="req.requestId">
+                                <tr class="border-b hover:bg-gray-50 transition-colors">
+                                    <td class="px-4 py-3 font-medium text-gray-900" x-text="req.email"></td>
+                                    <td class="px-4 py-3 text-gray-600" x-text="req.aadhaarName"></td>
+                                    <td class="px-4 py-3 font-mono text-gray-600" x-text="req.existingMobile"></td>
+                                    <td class="px-4 py-3">
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-gray-100 text-gray-600" x-text="req.status"></span>
+                                    </td>
+                                    <td class="px-4 py-3 text-gray-500" x-text="formatDate(req.updatedAt)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="p-4 border-t bg-gray-50 flex justify-end">
+                <button @click="showOrphanedModal = false" class="px-6 py-2 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800 transition-all">
+                    Close
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- Tooltip -->
