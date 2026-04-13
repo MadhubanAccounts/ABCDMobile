@@ -27,13 +27,20 @@
                 requests: [],
                 pageSize: 25,
                 currentPage: 1,
+                sortKey: 'date',
+                sortOrder: 'desc',
 
                 // SIM Modal State
                 showSimModal: false,
                 showViewModal: false,
                 selectedRequest: null,
                 simNumber: '',
+                upCode: '',
+                upcExpiry: '',
                 simError: '',
+                upCodeError: '',
+                expiryFilterDays: null,
+                upcExpiryFilterDays: null,
 
                 async init() {
                     lucide.createIcons();
@@ -67,7 +74,7 @@
                         // Calculate duplicates
                         const mobileCounts = {};
                         (result.requests || []).forEach(r => {
-                            const m = r.existingMobile;
+                            const m = String(r.existingMobile || '').trim();
                             if (m) mobileCounts[m] = (mobileCounts[m] || 0) + 1;
                         });
                         this.duplicateMobiles = new Set(
@@ -96,41 +103,61 @@
 
                 openSimModal(req) {
                     this.selectedRequest = req;
-                    this.simNumber = req.simNumber || '8991';
+                    this.simNumber = req.simNumber || '';
+                    this.upCode = req.upCode || '';
+                    this.upcExpiry = req.upcExpiry ? req.upcExpiry.split('T')[0] : '';
                     this.simError = '';
+                    this.upCodeError = '';
                     this.showSimModal = true;
                 },
 
                 validateSimFormat(sim) {
+                    if (!sim) return true;
                     // 20 characters: 8991 + 15 digits + 1 alphanumeric
                     const regex = /^8991\d{15}[a-zA-Z0-9]$/;
                     return regex.test(sim);
                 },
 
+                validateUpCode(code) {
+                    if (!code) return true;
+                    // 8 characters: 2 letters + 6 digits
+                    const regex = /^[a-zA-Z]{2}\d{6}$/;
+                    return regex.test(code);
+                },
+
                 async saveSimNumber() {
                     this.simError = '';
+                    this.upCodeError = '';
                     const sim = this.simNumber.trim();
+                    const upCode = this.upCode.trim();
 
-                    if (sim.length !== 20) {
+                    if (sim && sim.length !== 20) {
                         this.simError = 'SIM number must be exactly 20 characters.';
                         return;
                     }
 
-                    if (!this.validateSimFormat(sim)) {
+                    if (sim && !this.validateSimFormat(sim)) {
                         if (!confirm('The SIM number does not match the standard format (8991 + 15 digits + 1 alphanumeric). Do you want to save it anyway?')) {
                             return;
                         }
                     }
 
-                    // Check for duplicate SIM in local data first
-                    const isDuplicate = this.requests.some(r => r.simNumber === sim && r.requestId !== this.selectedRequest.requestId);
-                    if (isDuplicate) {
-                        this.simError = 'This SIM number is already assigned to another request.';
+                    if (upCode && !this.validateUpCode(upCode)) {
+                        this.upCodeError = 'UPCode must be 2 letters followed by 6 digits (e.g., XY123456).';
                         return;
                     }
 
+                    // Check for duplicate SIM in local data first
+                    if (sim) {
+                        const isDuplicate = this.requests.some(r => r.simNumber === sim && r.requestId !== this.selectedRequest.requestId);
+                        if (isDuplicate) {
+                            this.simError = 'This SIM number is already assigned to another request.';
+                            return;
+                        }
+                    }
+
                     // Check if this mobile number already has a SIM assigned in another request
-                    if (this.selectedRequest.existingMobile) {
+                    if (this.selectedRequest.existingMobile && sim) {
                         const mobileWithSim = this.requests.find(r => 
                             r.existingMobile === this.selectedRequest.existingMobile && 
                             r.simNumber && 
@@ -150,6 +177,8 @@
                                 action: 'mobilePlan_updateSimNumber',
                                 requestId: this.selectedRequest.requestId,
                                 simNumber: sim,
+                                upCode: upCode,
+                                upcExpiry: this.upcExpiry,
                                 email: this.email
                             })
                         });
@@ -158,7 +187,7 @@
 
                         this.showSimModal = false;
                         await this.fetchAdminData();
-                        alert('SIM number updated successfully.');
+                        alert('Request details updated successfully.');
                     } catch (e) {
                         alert(e.message);
                     } finally {
@@ -191,11 +220,25 @@
                     }
                 },
 
+                toggleSort(key) {
+                    if (this.sortKey === key) {
+                        this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sortKey = key;
+                        this.sortOrder = 'asc';
+                    }
+                    this.currentPage = 1;
+                    this.$nextTick(() => lucide.createIcons());
+                },
+
                 get filteredRequests() {
                     let filtered = this.requests;
 
                     if (this.showOnlyDuplicates) {
-                        filtered = filtered.filter(r => this.duplicateMobiles.has(r.existingMobile));
+                        filtered = filtered.filter(r => {
+                            const m = String(r.existingMobile || '').trim();
+                            return m && this.duplicateMobiles.has(m);
+                        });
                     }
 
                     if (this.searchQuery) {
@@ -206,9 +249,74 @@
                             (String(r.billingUid || '')).toLowerCase().includes(q) ||
                             (String(r.billingName || '')).toLowerCase().includes(q) ||
                             (String(r.email || '')).toLowerCase().includes(q) ||
-                            (String(r.simNumber || '')).toLowerCase().includes(q)
+                            (String(r.simNumber || '')).toLowerCase().includes(q) ||
+                            (String(r.upCode || '')).toLowerCase().includes(q)
                         );
                     }
+
+                    // Expiry Date Filter
+                    if (this.expiryFilterDays !== null && this.expiryFilterDays !== '') {
+                        const now = new Date();
+                        const limit = new Date();
+                        limit.setDate(now.getDate() + parseInt(this.expiryFilterDays));
+                        
+                        filtered = filtered.filter(r => {
+                            if (!r.expiryDate) return false;
+                            const exp = new Date(r.expiryDate);
+                            return exp >= now && exp <= limit;
+                        });
+                    }
+
+                    // UPC Expiry Filter
+                    if (this.upcExpiryFilterDays !== null && this.upcExpiryFilterDays !== '') {
+                        const now = new Date();
+                        const limit = new Date();
+                        limit.setDate(now.getDate() + parseInt(this.upcExpiryFilterDays));
+                        
+                        filtered = filtered.filter(r => {
+                            if (!r.upcExpiry) return false;
+                            const exp = new Date(r.upcExpiry);
+                            return exp >= now && exp <= limit;
+                        });
+                    }
+
+                    // Apply Sorting
+                    const key = this.sortKey;
+                    const order = this.sortOrder === 'asc' ? 1 : -1;
+
+                    filtered.sort((a, b) => {
+                        let valA, valB;
+
+                        switch (key) {
+                            case 'date':
+                                valA = new Date(a.updatedAt || a.createdAt).getTime();
+                                valB = new Date(b.updatedAt || b.createdAt).getTime();
+                                break;
+                            case 'name':
+                                valA = (a.aadhaarName || '').toLowerCase();
+                                valB = (b.aadhaarName || '').toLowerCase();
+                                break;
+                            case 'mobile':
+                                valA = String(a.existingMobile || '').trim();
+                                valB = String(b.existingMobile || '').trim();
+                                break;
+                            case 'operator':
+                                valA = (a.newOperator || '').toLowerCase();
+                                valB = (b.newOperator || '').toLowerCase();
+                                break;
+                            case 'status':
+                                valA = (a.status || '').toLowerCase();
+                                valB = (b.status || '').toLowerCase();
+                                break;
+                            default:
+                                return 0;
+                        }
+
+                        if (valA < valB) return -1 * order;
+                        if (valA > valB) return 1 * order;
+                        return 0;
+                    });
+
                     return filtered;
                 },
 
@@ -285,6 +393,16 @@
                 <p class="text-sm text-gray-500" x-text="'Showing ' + filteredRequests.length + ' total records'"></p>
             </div>
             <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+                <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1 shadow-sm">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase">Plan Exp (Days)</span>
+                    <input type="number" x-model="expiryFilterDays" @input="currentPage = 1" placeholder="X" 
+                           class="w-12 border-none focus:ring-0 text-sm p-0 text-center font-bold text-blue-600">
+                </div>
+                <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1 shadow-sm">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase">UPC Exp (Days)</span>
+                    <input type="number" x-model="upcExpiryFilterDays" @input="currentPage = 1" placeholder="X" 
+                           class="w-12 border-none focus:ring-0 text-sm p-0 text-center font-bold text-orange-600">
+                </div>
                 <button @click="showOnlyDuplicates = !showOnlyDuplicates; currentPage = 1" 
                         :class="showOnlyDuplicates ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'"
                         class="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all shadow-sm whitespace-nowrap">
@@ -305,12 +423,38 @@
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
-                        <tr class="bg-gray-50 text-xs uppercase font-bold text-gray-500 tracking-wider">
-                            <th class="px-6 py-4">Date & Time</th>
-                            <th class="px-6 py-4">User Details</th>
-                            <th class="px-6 py-4">Mobile No.</th>
-                            <th class="px-6 py-4">Operator Shift</th>
-                            <th class="px-6 py-4">Status / SIM</th>
+                        <tr class="bg-gray-50 text-[10px] uppercase font-bold text-gray-500 tracking-wider">
+                            <th class="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors group" @click="toggleSort('date')">
+                                <div class="flex items-center gap-1">
+                                    Date & Time
+                                    <i data-lucide="arrow-up-down" class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" :class="sortKey === 'date' ? 'opacity-100 text-blue-600' : ''"></i>
+                                </div>
+                            </th>
+                            <th class="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors group" @click="toggleSort('name')">
+                                <div class="flex items-center gap-1">
+                                    User Details
+                                    <i data-lucide="arrow-up-down" class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" :class="sortKey === 'name' ? 'opacity-100 text-blue-600' : ''"></i>
+                                </div>
+                            </th>
+                            <th class="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors group" @click="toggleSort('mobile')">
+                                <div class="flex items-center gap-1">
+                                    Mobile No.
+                                    <i data-lucide="arrow-up-down" class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" :class="sortKey === 'mobile' ? 'opacity-100 text-blue-600' : ''"></i>
+                                </div>
+                            </th>
+                            <th class="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors group" @click="toggleSort('operator')">
+                                <div class="flex items-center gap-1">
+                                    Operator Shift
+                                    <i data-lucide="arrow-up-down" class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" :class="sortKey === 'operator' ? 'opacity-100 text-blue-600' : ''"></i>
+                                </div>
+                            </th>
+                            <th class="px-6 py-4">Exp. Date</th>
+                            <th class="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors group" @click="toggleSort('status')">
+                                <div class="flex items-center gap-1">
+                                    Status / SIM
+                                    <i data-lucide="arrow-up-down" class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" :class="sortKey === 'status' ? 'opacity-100 text-blue-600' : ''"></i>
+                                </div>
+                            </th>
                             <th class="px-6 py-4 text-right">Actions</th>
                         </tr>
                     </thead>
@@ -332,6 +476,7 @@
                                         <span class="text-xs font-bold text-blue-600" x-text="req.newOperator"></span>
                                     </div>
                                 </td>
+                                <td class="px-6 py-4 text-xs font-medium text-gray-600" x-text="req.expiryDate ? new Date(req.expiryDate).toLocaleDateString('en-IN') : '-'"></td>
                                 <td class="px-6 py-4">
                                     <div class="flex flex-col gap-1">
                                         <span :class="{
@@ -536,13 +681,31 @@
                     <div class="text-sm text-gray-600" x-text="selectedRequest?.existingMobile"></div>
                 </div>
 
-                <div class="space-y-2">
-                    <label class="block text-sm font-bold text-gray-700">SIM Number (20 Characters)</label>
-                    <input type="text" x-model="simNumber" maxlength="20"
-                           class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-lg tracking-widest"
-                           placeholder="8991...">
-                    <p x-show="simError" class="text-xs text-red-600 font-medium" x-text="simError"></p>
-                    <p class="text-[10px] text-gray-400">Format: 8991 + 15 digits + 1 alphanumeric</p>
+                <div class="grid grid-cols-1 gap-4">
+                    <div class="space-y-2">
+                        <label class="block text-sm font-bold text-gray-700">SIM Number (20 Characters)</label>
+                        <input type="text" x-model="simNumber" maxlength="20"
+                               class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-lg tracking-widest"
+                               placeholder="8991...">
+                        <p x-show="simError" class="text-xs text-red-600 font-medium" x-text="simError"></p>
+                        <p class="text-[10px] text-gray-400">Format: 8991 + 15 digits + 1 alphanumeric</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-sm font-bold text-gray-700">UPCode</label>
+                            <input type="text" x-model="upCode" maxlength="8"
+                                   class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-lg uppercase tracking-widest"
+                                   placeholder="XY123456">
+                            <p x-show="upCodeError" class="text-xs text-red-600 font-medium" x-text="upCodeError"></p>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-sm font-bold text-gray-700">UPC Expiry</label>
+                            <input type="date" x-model="upcExpiry"
+                                   class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                        </div>
+                    </div>
+                    <p class="text-[10px] text-gray-400">UPCode: 2 letters + 6 digits</p>
                 </div>
 
                 <div class="pt-4 flex gap-3">
