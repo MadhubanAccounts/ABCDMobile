@@ -83,8 +83,15 @@
                                 .map(([m]) => m)
                         );
 
+                        const normalizedRequests = (result.requests || []).map(r => ({
+                            ...r,
+                            requestType: String(r.requestType || '').trim().toUpperCase(),
+                            existingOperator: String(r.existingOperator || '').trim().toUpperCase(),
+                            newOperator: String(r.newOperator || '').trim().toUpperCase()
+                        }));
+
                         // Sort by date descending (latest first)
-                        this.requests = (result.requests || []).sort((a, b) => {
+                        this.requests = normalizedRequests.sort((a, b) => {
                             const dateA = new Date(a.updatedAt || a.createdAt);
                             const dateB = new Date(b.updatedAt || b.createdAt);
                             return dateB - dateA;

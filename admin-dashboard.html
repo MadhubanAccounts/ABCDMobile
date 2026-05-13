@@ -88,7 +88,14 @@
                         }
 
                         this.isAuthorized = true;
-                        this.requests = result.requests || [];
+                        const normalizedRequests = (result.requests || []).map(r => ({
+                            ...r,
+                            requestType: String(r.requestType || '').trim().toUpperCase(),
+                            existingOperator: String(r.existingOperator || '').trim().toUpperCase(),
+                            newOperator: String(r.newOperator || '').trim().toUpperCase()
+                        }));
+
+                        this.requests = normalizedRequests;
                         this.profiles = result.profiles || [];
                         this.submissions = result.submissions || [];
                         this.calculateStats();
@@ -111,8 +118,11 @@
                     this.stats.activeUsers = this.profiles.length;
                     this.stats.pendingRequests = this.requests.filter(r => r.status === 'Applied' || r.status === 'Pending').length;
                     this.stats.processedRequests = this.requests.filter(r => r.status === 'Processed' || r.status === 'Sim Delivered').length;
-                    this.stats.newRequests = this.requests.filter(r => r.requestType === 'NEW').length;
-                    this.stats.shiftRequests = this.requests.filter(r => r.requestType === 'SHIFT' || !r.requestType).length;
+                    this.stats.newRequests = this.requests.filter(r => String(r.requestType || '').trim().toUpperCase() === 'NEW').length;
+                    this.stats.shiftRequests = this.requests.filter(r => {
+                        const type = String(r.requestType || '').trim().toUpperCase();
+                        return type === 'SHIFT' || type === '';
+                    }).length;
 
                     // Calculate Duplicate Mobiles
                     const mobileCounts = {};
@@ -212,8 +222,9 @@
                 calculateOperatorStats() {
                     const operators = ['Airtel', 'Jio', 'VI', 'BSNL'];
                     this.operatorStats = operators.map(op => {
-                        const gained = this.requests.filter(r => r.newOperator === op && r.existingOperator !== op).length;
-                        const lost = this.requests.filter(r => r.existingOperator === op && r.newOperator !== op).length;
+                        const targetOp = op.toUpperCase();
+                        const gained = this.requests.filter(r => String(r.newOperator || '').trim().toUpperCase() === targetOp && String(r.existingOperator || '').trim().toUpperCase() !== targetOp).length;
+                        const lost = this.requests.filter(r => String(r.existingOperator || '').trim().toUpperCase() === targetOp && String(r.newOperator || '').trim().toUpperCase() !== targetOp).length;
                         return {
                             name: op,
                             gained,

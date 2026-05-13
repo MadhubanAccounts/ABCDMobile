@@ -1028,7 +1028,13 @@
                     try {
                         const res = await fetch(GAS_URL + '?action=mobilePlan_getRequests&email=' + this.email);
                         const data = await res.json();
-                        this.requests = Array.isArray(data) ? data : [];
+                        const rawData = Array.isArray(data) ? data : [];
+                        this.requests = rawData.map(r => ({
+                            ...r,
+                            requestType: String(r.requestType || '').trim().toUpperCase(),
+                            existingOperator: String(r.existingOperator || '').trim().toUpperCase(),
+                            newOperator: String(r.newOperator || '').trim().toUpperCase()
+                        }));
                     } catch (e) {
                         this.requests = [];
                     } finally {
