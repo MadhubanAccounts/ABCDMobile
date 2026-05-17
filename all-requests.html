@@ -22,6 +22,7 @@
                 isAuthorized: false,
                 loading: false,
                 searchQuery: '',
+                statusFilter: 'ALL', // New: Server-side status filter
                 showOnlyDuplicates: false,
                 duplicateMobiles: new Set(),
                 requests: [],
@@ -60,7 +61,14 @@
                 async fetchAdminData() {
                     this.loading = true;
                     try {
-                        const response = await fetch(GAS_URL + '?action=mobilePlan_getAdminData&email=' + this.email);
+                        const params = new URLSearchParams({
+                            action: 'mobilePlan_getAdminData',
+                            email: this.email,
+                            status: this.statusFilter,
+                            includeAuxData: this.requests.length === 0 ? 'true' : 'false' // Only load aux data once
+                        });
+
+                        const response = await fetch(GAS_URL + '?' + params.toString());
                         const result = await response.json();
                         
                         if (result.error || !result.isAdmin) {
@@ -71,32 +79,34 @@
 
                         this.isAuthorized = true;
                         
-                        // Calculate duplicates
-                        const mobileCounts = {};
-                        (result.requests || []).forEach(r => {
-                            const m = String(r.existingMobile || '').trim();
-                            const s = String(r.status || '').toUpperCase();
-                            if (m && s !== 'CANCELLED') mobileCounts[m] = (mobileCounts[m] || 0) + 1;
-                        });
-                        this.duplicateMobiles = new Set(
-                            Object.entries(mobileCounts)
-                                .filter(([m, count]) => count > 1)
-                                .map(([m]) => m)
-                        );
+                        if (result.requests) {
+                            const normalizedRequests = result.requests.map(r => ({
+                                ...r,
+                                requestType: String(r.requestType || '').trim().toUpperCase(),
+                                existingOperator: String(r.existingOperator || '').trim().toUpperCase(),
+                                newOperator: String(r.newOperator || '').trim().toUpperCase()
+                            }));
 
-                        const normalizedRequests = (result.requests || []).map(r => ({
-                            ...r,
-                            requestType: String(r.requestType || '').trim().toUpperCase(),
-                            existingOperator: String(r.existingOperator || '').trim().toUpperCase(),
-                            newOperator: String(r.newOperator || '').trim().toUpperCase()
-                        }));
+                            // Sort by date descending (latest first)
+                            this.requests = normalizedRequests.sort((a, b) => {
+                                const dateA = new Date(a.updatedAt || a.createdAt);
+                                const dateB = new Date(b.updatedAt || b.createdAt);
+                                return dateB - dateA;
+                            });
 
-                        // Sort by date descending (latest first)
-                        this.requests = normalizedRequests.sort((a, b) => {
-                            const dateA = new Date(a.updatedAt || a.createdAt);
-                            const dateB = new Date(b.updatedAt || b.createdAt);
-                            return dateB - dateA;
-                        });
+                            // Calculate duplicates only if we have all requests or when needed
+                            const mobileCounts = {};
+                            this.requests.forEach(r => {
+                                const m = String(r.existingMobile || '').trim();
+                                const s = String(r.status || '').toUpperCase();
+                                if (m && s !== 'CANCELLED') mobileCounts[m] = (mobileCounts[m] || 0) + 1;
+                            });
+                            this.duplicateMobiles = new Set(
+                                Object.entries(mobileCounts)
+                                    .filter(([m, count]) => count > 1)
+                                    .map(([m]) => m)
+                            );
+                        }
                         
                         this.$nextTick(() => {
                             lucide.createIcons();
@@ -212,8 +222,20 @@
                         const result = await response.json();
                         if (result.error) throw new Error(result.error);
 
+                        // Smart Refresh: Update local data
+                        const index = this.requests.findIndex(r => r.requestId === this.selectedRequest.requestId);
+                        if (index !== -1) {
+                            this.requests[index] = {
+                                ...this.requests[index],
+                                simNumber: sim,
+                                upCode: upCode,
+                                upcExpiry: upcExpiry,
+                                status: 'Sim Delivered',
+                                updatedAt: new Date().toISOString()
+                            };
+                        }
+
                         this.showSimModal = false;
-                        await this.fetchAdminData();
                         alert('Request details updated successfully.');
                     } catch (e) {
                         alert(e.message);
@@ -238,7 +260,8 @@
                         const result = await response.json();
                         if (result.error) throw new Error(result.error);
 
-                        await this.fetchAdminData();
+                        // Smart Refresh: Remove from local data
+                        this.requests = this.requests.filter(r => r.requestId !== requestId);
                         alert('Request deleted successfully.');
                     } catch (e) {
                         alert(e.message);
@@ -263,7 +286,15 @@
                         const result = await response.json();
                         if (result.error) throw new Error(result.error);
 
-                        await this.fetchAdminData();
+                        // Smart Refresh: Update local data
+                        const index = this.requests.findIndex(r => r.requestId === requestId);
+                        if (index !== -1) {
+                            this.requests[index] = {
+                                ...this.requests[index],
+                                status: 'CANCELLED',
+                                updatedAt: new Date().toISOString()
+                            };
+                        }
                         alert('Request marked as CANCELLED successfully.');
                     } catch (e) {
                         alert(e.message);
@@ -461,7 +492,19 @@
                 <h2 class="text-2xl font-bold text-gray-900">Request History</h2>
                 <p class="text-sm text-gray-500" x-text="'Showing ' + filteredRequests.length + ' total records'"></p>
             </div>
-            <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+                <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+                    <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1 shadow-sm">
+                        <span class="text-[10px] font-bold text-gray-400 uppercase">Status</span>
+                        <select x-model="statusFilter" @change="currentPage = 1; fetchAdminData()" 
+                                class="border-none focus:ring-0 text-sm p-0 font-bold text-gray-700 bg-transparent cursor-pointer">
+                            <option value="ALL">All Status</option>
+                            <option value="APPLIED">Applied</option>
+                            <option value="PENDING">Pending</option>
+                            <option value="SIM DELIVERED">Delivered</option>
+                            <option value="PROCESSED">Processed</option>
+                            <option value="CANCELLED">Cancelled</option>
+                        </select>
+                    </div>
                 <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1 shadow-sm">
                     <span class="text-[10px] font-bold text-gray-400 uppercase">Plan Exp (Days)</span>
                     <input type="number" x-model="expiryFilterDays" @input="currentPage = 1" placeholder="X" 
