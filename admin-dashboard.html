@@ -114,19 +114,21 @@
                 },
 
                 calculateStats() {
-                    this.stats.totalRequests = this.requests.length;
+                    const activeRequests = this.requests.filter(r => String(r.status || '').toUpperCase() !== 'CANCELLED');
+                    
+                    this.stats.totalRequests = activeRequests.length;
                     this.stats.activeUsers = this.profiles.length;
-                    this.stats.pendingRequests = this.requests.filter(r => r.status === 'Applied' || r.status === 'Pending').length;
-                    this.stats.processedRequests = this.requests.filter(r => r.status === 'Processed' || r.status === 'Sim Delivered').length;
-                    this.stats.newRequests = this.requests.filter(r => String(r.requestType || '').trim().toUpperCase() === 'NEW').length;
-                    this.stats.shiftRequests = this.requests.filter(r => {
+                    this.stats.pendingRequests = activeRequests.filter(r => r.status === 'Applied' || r.status === 'Pending').length;
+                    this.stats.processedRequests = activeRequests.filter(r => r.status === 'Processed' || r.status === 'Sim Delivered').length;
+                    this.stats.newRequests = activeRequests.filter(r => String(r.requestType || '').trim().toUpperCase() === 'NEW').length;
+                    this.stats.shiftRequests = activeRequests.filter(r => {
                         const type = String(r.requestType || '').trim().toUpperCase();
                         return type === 'SHIFT' || type === '';
                     }).length;
 
                     // Calculate Duplicate Mobiles
                     const mobileCounts = {};
-                    this.requests.forEach(r => {
+                    activeRequests.forEach(r => {
                         const m = r.existingMobile;
                         if (m) mobileCounts[m] = (mobileCounts[m] || 0) + 1;
                     });
@@ -150,7 +152,7 @@
 
                     // Calculate Orphaned Requests (Requests without profile)
                     const profileEmails = new Set(this.profiles.map(p => String(p.email || '').toLowerCase().trim()));
-                    this.orphanedRequests = this.requests.filter(r => {
+                    this.orphanedRequests = activeRequests.filter(r => {
                         const reqEmail = String(r.email || '').toLowerCase().trim();
                         return reqEmail && !profileEmails.has(reqEmail);
                     });
@@ -159,7 +161,7 @@
                     // Calculate Aadhaar Distribution & Exceptions
                     const aadhaarCounts = {};
                     const aadhaarDetails = {};
-                    this.requests.forEach(r => {
+                    activeRequests.forEach(r => {
                         const a = r.aadhaarNo;
                         if (a) {
                             aadhaarCounts[a] = (aadhaarCounts[a] || 0) + 1;
@@ -197,7 +199,7 @@
                     next30Days.setDate(now.getDate() + 30);
                     
                     const expiryCounts = {};
-                    this.requests.forEach(r => {
+                    activeRequests.forEach(r => {
                         if (r.expiryDate) {
                             const exp = new Date(r.expiryDate);
                             if (exp >= now && exp <= next30Days) {
@@ -220,11 +222,12 @@
                 },
 
                 calculateOperatorStats() {
+                    const activeRequests = this.requests.filter(r => String(r.status || '').toUpperCase() !== 'CANCELLED');
                     const operators = ['Airtel', 'Jio', 'VI', 'BSNL'];
                     this.operatorStats = operators.map(op => {
                         const targetOp = op.toUpperCase();
-                        const gained = this.requests.filter(r => String(r.newOperator || '').trim().toUpperCase() === targetOp && String(r.existingOperator || '').trim().toUpperCase() !== targetOp).length;
-                        const lost = this.requests.filter(r => String(r.existingOperator || '').trim().toUpperCase() === targetOp && String(r.newOperator || '').trim().toUpperCase() !== targetOp).length;
+                        const gained = activeRequests.filter(r => String(r.newOperator || '').trim().toUpperCase() === targetOp && String(r.existingOperator || '').trim().toUpperCase() !== targetOp).length;
+                        const lost = activeRequests.filter(r => String(r.existingOperator || '').trim().toUpperCase() === targetOp && String(r.newOperator || '').trim().toUpperCase() !== targetOp).length;
                         return {
                             name: op,
                             gained,
@@ -309,8 +312,9 @@
                     const height = 300;
                     const margin = { top: 30, right: 40, bottom: 40, left: 40 };
 
+                    const activeRequests = this.requests.filter(r => String(r.status || '').toUpperCase() !== 'CANCELLED' && (r.updatedAt || r.createdAt));
                     const dataByDate = d3.rollups(
-                        this.requests.filter(r => r.updatedAt || r.createdAt),
+                        activeRequests,
                         v => v.length,
                         d => {
                             const dateStr = d.updatedAt || d.createdAt;
@@ -422,7 +426,8 @@
                     const height = 300;
                     const radius = Math.min(width, height) / 2 - 40;
 
-                    const data = d3.rollups(this.requests, v => v.length, d => d.newOperator || 'Unknown');
+                    const activeRequests = this.requests.filter(r => String(r.status || '').toUpperCase() !== 'CANCELLED');
+                    const data = d3.rollups(activeRequests, v => v.length, d => d.newOperator || 'Unknown');
                     if (data.length === 0) {
                         container.append("div")
                             .attr("class", "flex items-center justify-center h-full text-gray-400 text-sm")
@@ -477,7 +482,8 @@
                         if (uid) submissionMap.set(uid, s);
                     });
 
-                    const data = d3.rollups(this.requests, v => v.length, d => {
+                    const activeRequests = this.requests.filter(r => String(r.status || '').toUpperCase() !== 'CANCELLED');
+                    const data = d3.rollups(activeRequests, v => v.length, d => {
                         const uid = String(d.billingUid || '').trim();
                         const sub = submissionMap.get(uid);
                         return sub ? (sub.zone || 'Unknown') : 'Unknown';
@@ -556,7 +562,8 @@
                         if (uid) submissionMap.set(uid, s);
                     });
 
-                    const data = d3.rollups(this.requests, v => v.length, d => {
+                    const activeRequests = this.requests.filter(r => String(r.status || '').toUpperCase() !== 'CANCELLED');
+                    const data = d3.rollups(activeRequests, v => v.length, d => {
                         const uid = String(d.billingUid || '').trim();
                         const sub = submissionMap.get(uid);
                         return sub ? (sub.subZone || 'Other') : 'Other';

@@ -75,7 +75,8 @@
                         const mobileCounts = {};
                         (result.requests || []).forEach(r => {
                             const m = String(r.existingMobile || '').trim();
-                            if (m) mobileCounts[m] = (mobileCounts[m] || 0) + 1;
+                            const s = String(r.status || '').toUpperCase();
+                            if (m && s !== 'CANCELLED') mobileCounts[m] = (mobileCounts[m] || 0) + 1;
                         });
                         this.duplicateMobiles = new Set(
                             Object.entries(mobileCounts)
@@ -239,6 +240,31 @@
 
                         await this.fetchAdminData();
                         alert('Request deleted successfully.');
+                    } catch (e) {
+                        alert(e.message);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async cancelRequest(requestId) {
+                    if (!confirm('Are you sure you want to mark this request as CANCELLED? It will be excluded from all dashboard metrics and the mobile number will be released for new applications.')) return;
+
+                    this.loading = true;
+                    try {
+                        const response = await fetch(GAS_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                action: 'mobilePlan_cancelRequest',
+                                requestId: requestId,
+                                email: this.email
+                            })
+                        });
+                        const result = await response.json();
+                        if (result.error) throw new Error(result.error);
+
+                        await this.fetchAdminData();
+                        alert('Request marked as CANCELLED successfully.');
                     } catch (e) {
                         alert(e.message);
                     } finally {
@@ -525,7 +551,8 @@
                                         <span :class="{
                                             'bg-blue-100 text-blue-700': req.status === 'Applied',
                                             'bg-green-100 text-green-700': req.status === 'Processed' || req.status === 'Sim Delivered',
-                                            'bg-yellow-100 text-yellow-700': req.status === 'Pending'
+                                            'bg-yellow-100 text-yellow-700': req.status === 'Pending',
+                                            'bg-red-100 text-red-700': req.status === 'CANCELLED'
                                         }" class="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider w-fit" x-text="req.status"></span>
                                         <div x-show="req.simNumber" class="text-[10px] font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded border border-gray-200" x-text="'SIM: ' + req.simNumber"></div>
                                     </div>
@@ -538,8 +565,15 @@
                                             <i data-lucide="credit-card" class="w-4 h-4"></i>
                                         </button>
                                         
-                                        <!-- Delete Action (Hidden if Sim Delivered) -->
-                                        <button x-show="req.status !== 'Sim Delivered'" 
+                                        <!-- Cancel Action (Only if not already cancelled) -->
+                                        <button x-show="req.status !== 'CANCELLED'" 
+                                                @click="cancelRequest(req.requestId)" 
+                                                class="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors" title="Cancel Request">
+                                            <i data-lucide="ban" class="w-4 h-4"></i>
+                                        </button>
+
+                                        <!-- Delete Action (Hidden if Sim Delivered or Processed) -->
+                                        <button x-show="req.status !== 'Sim Delivered' && req.status !== 'Processed'" 
                                                 @click="deleteRequest(req.requestId)" 
                                                 class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Request">
                                             <i data-lucide="trash-2" class="w-4 h-4"></i>

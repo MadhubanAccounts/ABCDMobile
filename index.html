@@ -398,6 +398,9 @@
                                 <i data-lucide="lock" class="w-4 h-4 text-gray-400"></i>
                             </div>
                         </div>
+                        <div x-show="currentRequest.requestType === 'SHIFT' && !currentRequest.requestId" class="mt-1 text-[10px] text-gray-500 italic">
+                            Only one request allowed per mobile number. To edit existing, use the Dashboard.
+                        </div>
                     </div>
 
                     <!-- Operators -->
@@ -680,6 +683,20 @@
         </div>
     </div>
 
+    <!-- Persistent Error Modal -->
+    <div x-show="showPersistentAlert" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600 mx-auto">
+                <i data-lucide="alert-circle" class="w-6 h-6"></i>
+            </div>
+            <div class="text-center space-y-2">
+                <h3 class="text-lg font-bold">Registration Alert</h3>
+                <p class="text-sm text-gray-500 leading-relaxed font-medium" x-text="persistentAlertMsg"></p>
+            </div>
+            <button @click="showPersistentAlert = false" class="w-full px-4 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all">OK, Understood</button>
+        </div>
+    </div>
+
     <!-- Global Toasts -->
     <div class="fixed bottom-6 left-4 right-4 z-50 flex flex-col gap-3">
         <template x-for="t in toasts" :key="t.id">
@@ -726,6 +743,8 @@
                 showAgeConfirm: false,
                 ageConfirmed: false,
                 showNewConnectionModal: false,
+                showPersistentAlert: false,
+                persistentAlertMsg: '',
 
                 init() {
                     lucide.createIcons();
@@ -781,6 +800,14 @@
                 },
 
                 showToast(message, type = 'success') {
+                    // Specific check for Duplicate Mobile errors to make them persistent
+                    if (message.includes('DUPLICATE_OWN') || message.includes('DUPLICATE_OTHER') || message.includes('Duplicate Mobile')) {
+                        this.persistentAlertMsg = message.replace('DUPLICATE_OWN: ', '').replace('DUPLICATE_OTHER: ', '');
+                        this.showPersistentAlert = true;
+                        this.$nextTick(() => lucide.createIcons());
+                        return;
+                    }
+
                     const id = Date.now() + Math.random();
                     this.toasts.push({ id, message, type });
                     this.$nextTick(() => lucide.createIcons());
@@ -1195,9 +1222,26 @@
                         return;
                     }
 
+                    // Duplicate Check (Local Pre-validation)
+                    if (this.currentRequest.requestType === 'SHIFT') {
+                        const localDuplicate = this.requests.find(r => 
+                            String(r.existingMobile).trim() === String(this.currentRequest.existingMobile).trim() && 
+                            (String(r.requestType).toUpperCase() === 'SHIFT' || !r.requestType) &&
+                            r.requestId !== this.currentRequest.requestId &&
+                            String(r.status || '').toUpperCase() !== 'CANCELLED'
+                        );
+                        if (localDuplicate) {
+                            this.persistentAlertMsg = `Duplicate Mobile: Number ${this.currentRequest.existingMobile} already has an active request. Please find it in your Dashboard and click 'Edit' to update it. If that request is no longer valid, contact your coordinator to mark it as 'Cancelled'.`;
+                            this.showPersistentAlert = true;
+                            this.$nextTick(() => lucide.createIcons());
+                            this.step = 'dashboard';
+                            return;
+                        }
+                    }
+
                     const res = await this.callApi('mobilePlan_saveRequest', { requestData: this.currentRequest });
                     if (res) {
-                        this.showToast('Request saved successfully!');
+                        this.showToast(this.currentRequest.requestId ? 'Request updated successfully!' : 'Request saved successfully!');
                         this.fetchRequests();
                         this.step = 'dashboard';
                         this.ageConfirmed = false; // Reset for next time
